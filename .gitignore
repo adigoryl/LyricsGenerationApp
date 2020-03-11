@@ -124,7 +124,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Filer I want to ignore:
+# Files I want to ignore:
 tuned_models/
 .gitignore
 .DS_Store

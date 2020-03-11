@@ -84,7 +84,7 @@ def get_token_types(input, enc):
     return tok_type_ids
 
 
-def generate_lyrics(model, enc, args, context, end_token, device):
+def generate_lyrics(model, enc, gen_batch, context, end_token, device):
     """
     Generates a sequence of words from the fine-tuned model, token by token. This method generates with the
     token_type_ids and position_ids -> since the fine-tuned model is trained with the former input partitions.
@@ -99,9 +99,9 @@ def generate_lyrics(model, enc, args, context, end_token, device):
     :return: Generated lyrics along with the condition provided.
     """
     # Pack in tensor and correct shape
-    input_ids = torch.tensor(context, device=device, dtype=torch.long).unsqueeze(0).repeat(args.gen_batch, 1)
-    position_ids = torch.arange(0, len(context), device=device, dtype=torch.long).unsqueeze(0).repeat(args.gen_batch, 1)
-    token_type_ids = torch.tensor(get_token_types(context, enc), device=device, dtype=torch.long).unsqueeze(0).repeat(args.gen_batch, 1)
+    input_ids = torch.tensor(context, device=device, dtype=torch.long).unsqueeze(0).repeat(gen_batch, 1)
+    position_ids = torch.arange(0, len(context), device=device, dtype=torch.long).unsqueeze(0).repeat(gen_batch, 1)
+    token_type_ids = torch.tensor(get_token_types(context, enc), device=device, dtype=torch.long).unsqueeze(0).repeat(gen_batch, 1)
 
     # 'Output' stores the concatination of word by word prediction
     output = input_ids.tolist()
@@ -112,7 +112,7 @@ def generate_lyrics(model, enc, args, context, end_token, device):
 
     with torch.no_grad():
         past = None
-        keep_gen_4_these_batches = np.arange(0, args.gen_batch).tolist()
+        keep_gen_4_these_batches = np.arange(0, gen_batch).tolist()
         for _ in trange(len(context), max_len):
             logits, past = model(input_ids=input_ids,
                                  position_ids=position_ids,
@@ -126,9 +126,9 @@ def generate_lyrics(model, enc, args, context, end_token, device):
 
             # Since we are using past, the model only requires the generated token as the next input
             input_ids = next_token_id
-            position_ids = torch.tensor(len(output[0]), device=device, dtype=torch.long).unsqueeze(0).repeat(args.gen_batch, 1)
+            position_ids = torch.tensor(len(output[0]), device=device, dtype=torch.long).unsqueeze(0).repeat(gen_batch, 1)
             # What ever was the last element we want the same value for the next toke_type_id
-            token_type_ids = torch.tensor(token_type_ids[0][-1].item(), device=device, dtype=torch.long).unsqueeze(0).repeat(args.gen_batch, 1)
+            token_type_ids = torch.tensor(token_type_ids[0][-1].item(), device=device, dtype=torch.long).unsqueeze(0).repeat(gen_batch, 1)
 
             # The gen should stop when the end tag reached; however, we can predict a few songs at a time (batch).
             # Solution: keep generating until model predicts the end signal for ALL batch indexes, but, only append
@@ -147,13 +147,16 @@ def generate_lyrics(model, enc, args, context, end_token, device):
     return output
 
 
-def main():
-    args = init_args()
+def main(context):
+    # args = init_args()
+    load_model_dir = "/Users/aw678/PycharmProjects/lyrics_generator_flask_app/tuned_models/genius_lyrics_v2/gpt2_13-11-2019@18'25/model_epoch_20"
+    gen_batch = 2
     device, n_gpu = U.get_device(logger)
 
     # Reload the model and the tokenizer
-    model = GPT2LMHeadModel.from_pretrained(args.load_model_dir)
-    enc = GPT2Tokenizer.from_pretrained(args.load_model_dir)
+
+    model = GPT2LMHeadModel.from_pretrained(load_model_dir)
+    enc = GPT2Tokenizer.from_pretrained(load_model_dir)
 
     model.eval()
     U.set_seed(np.random.randint(0, 100))
@@ -163,32 +166,34 @@ def main():
     # @                    GENERATE FROM FINE-TUNED GPT2
     # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
-    genre = "Pop"
-    artist = "Justin Bieber"
-    year = "2015"
-    album = "Purpose"
-    song_name = "Love Yourself"
-
-    context = "[s:genre]" + genre + "[e:genre]" + \
-              "[s:artist]" + artist + "[e:artist]" + \
-              "[s:year]" + year + "[e:year]" + \
-              "[s:album]" + album + "[e:album]" + \
-              "[s:song_name]" + song_name + "[e:song_name]" + \
-              "[s:lyrics]"
-
-    context = "[s:genre]" + genre + "[e:genre]" + \
-              "[s:artist]" + artist + "[e:artist]" + \
-              "[s:lyrics]"
+    # genre = "Pop"
+    # artist = "Justin Bieber"
+    # year = "2015"
+    # album = "Purpose"
+    # song_name = "Love Yourself"
+    #
+    # context = "[s:genre]" + genre + "[e:genre]" + \
+    #           "[s:artist]" + artist + "[e:artist]" + \
+    #           "[s:year]" + year + "[e:year]" + \
+    #           "[s:album]" + album + "[e:album]" + \
+    #           "[s:song_name]" + song_name + "[e:song_name]" + \
+    #           "[s:lyrics]"
+    #
+    # context = "[s:genre]" + genre + "[e:genre]" + \
+    #           "[s:artist]" + artist + "[e:artist]" + \
+    #           "[s:lyrics]"
 
     end_token = "[e:lyrics]"
 
     context = enc.encode(context)
 
-    sequence_batch = generate_lyrics(model, enc, args, context, end_token, device)
+    sequence_batch = generate_lyrics(model, enc, gen_batch, context, end_token, device)
 
-    for seq in sequence_batch:
-        print(enc.decode(seq))
-        print("\n---------------\n")
+    lyrics_list = []
+    for indx, seq in enumerate(sequence_batch):
+        lyrics_list.append(enc.decode(seq))
+
+    return lyrics_list
 
 
 if __name__ == '__main__':
